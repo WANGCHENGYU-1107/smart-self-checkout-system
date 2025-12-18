@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>逢甲大學自動控制工程學系自助結帳系統</title>
+  <style>
+    :root{--bg:#0f1115;--panel:#1a1d24;--card:#222734;--muted:#a8b3cf;--text:#e6edff;--brand:#2dd4bf;--shadow:0 10px 30px rgba(0,0,0,.35);--radius:16px}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",Arial,sans-serif}
+    header{background:var(--panel);padding:18px 22px;font-weight:700;letter-spacing:.02em;box-shadow:var(--shadow);position:sticky;top:0;z-index:5}
+    .wrap{max-width:960px;margin:22px auto;padding:0 16px}
+    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .list{padding:8px 0}
+    .row{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.05)}
+    .row:last-child{border-bottom:none}
+    .name{flex:1;font-size:18px}
+    .subtotal{min-width:80px;text-align:right;font-variant-numeric:tabular-nums}
+    .totals{display:flex;justify-content:flex-end;gap:24px;padding:16px 18px;background:rgba(0,0,0,.2);font-variant-numeric:tabular-nums}
+    .totals div span{color:var(--muted)}
+    .actions{display:flex;gap:12px;padding:16px 18px;justify-content:flex-start;border-top:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.18)}
+    button{appearance:none;border:none;color:#0b1220;background:#fff;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;box-shadow:var(--shadow)}
+    button.primary{background:var(--brand)}button.ghost{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.15)}button[disabled]{opacity:.55;cursor:not-allowed;filter:grayscale(30%)}
+
+    #scale-overlay,#receipt-overlay{position:fixed;inset:0;display:none;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);z-index:20;align-items:center;justify-content:center;padding:20px}
+    .scale-card,.receipt-card{width:min(680px,92vw);background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:20px;box-shadow:var(--shadow);padding:22px;text-align:center}
+    .scale-title{margin:0 0 8px;font-size:22px}.scale-title b{color:var(--brand)}
+    .scale-weight{font-size:44px;font-weight:900;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+    .scale-sub{color:var(--muted);margin:0 0 10px}
+    .scale-kv{display:flex;gap:16px;margin:10px 0 16px;justify-content:center}
+    .tag{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);color:#dbe3ff;font-size:14px}
+    .tag strong{color:#fff}
+
+    /* QR 與 LOGO 並排（右側校徽等大） */
+    .qr-flex{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:10px}
+    #qrcode.qr{width:220px;height:220px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;border:1px solid #eee;overflow:hidden}
+    .logo{width:220px;height:220px;object-fit:contain;opacity:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}
+
+    /* QR 浮水印（更明顯） */
+    .qr-wrap{position:relative;width:220px;height:220px}
+    .qr-wm{
+      position:absolute;left:50%;top:50%;
+      transform:translate(-50%,-50%) rotate(-12deg);
+      width:82%;
+      opacity:.45;                 /* 明顯度：0.40~0.50 可調 */
+      filter:contrast(1.1) drop-shadow(0 1px 1.5px rgba(0,0,0,.15));
+      mix-blend-mode:multiply;
+      pointer-events:none;
+    }
+    .qr-note{font-size:14px;color:#a8b3cf;margin-top:8px}
+    .receipt-actions{display:flex;justify-content:center;gap:10px;margin-top:12px}
+  </style>
+</head>
+<body>
+  <header>逢甲大學自動控制工程學系自助結帳系統</header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="list" id="cart-list">
+        <div class="row muted" style="justify-content:center;color:#a8b3cf" id="empty-tip">（尚無品項）</div>
+        <ul id="cart-items" style="list-style:none;margin:0;padding:0"></ul>
+      </div>
+      <div class="totals">
+        <div><span>小計</span>　<b id="subtotal">$0</b></div>
+        <div><span>折扣</span>　<b id="discount">$0</b></div>
+        <div><span>合計</span>　<b id="total">$0</b></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="checkout-btn">確認結帳</button>
+        <button class="ghost" id="clear-btn">清空</button>
+        <div class="tag" style="margin-left:auto">若無更新，請重整或檢查網路</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 秤重遮罩 -->
+  <div id="scale-overlay">
+    <div class="scale-card">
+      <h3 class="scale-title">請將 <b id="scale-name">—</b> 放上秤重</h3>
+      <div class="scale-weight" id="scale-weight">— g</div>
+      <p class="scale-sub">分界：<span id="scale-split">—</span> g　｜　建議：<span id="scale-suggest">—</span></p>
+      <div class="scale-kv">
+        <div class="tag">狀態：<strong id="scale-state">偵測中</strong></div>
+        <div class="tag">將加入：<strong id="scale-will-add">—</strong></div>
+      </div>
+      <div class="actions">
+        <button class="ghost" onclick="cancelScale()">取消秤重</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 收據 QRCode 遮罩（含浮水印與關閉鍵） -->
+  <div id="receipt-overlay">
+    <div class="receipt-card">
+      <h2>請掃描 QRCode 下載收據</h2>
+      <div class="qr-flex">
+        <div class="qr-wrap">
+          <div id="qrcode" class="qr"></div>
+          <img id="qrWm" class="qr-wm" src="/static/fcu_logo.svg" alt="" onerror="this.style.display='none'">
+        </div>
+        <img id="schoolLogo" class="logo" src="/static/fcu_logo.svg" alt="School Logo" onerror="this.style.display='none'">
+      </div>
+      <p class="qr-note">此畫面將在 60 秒後自動關閉</p>
+      <div class="receipt-actions">
+        <button class="ghost" onclick="closeReceipt()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    const api = (p, opt) => fetch(p, opt).then(r => r.json());
+
+    // 使用 polling（後端 async_mode=threading）
+    const socket = io({
+      transports: ["polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500
+    });
+
+    socket.on("connect", () => { syncAll(); });
+    socket.on("disconnect", () => { startScalePoller(); });
+
+    // 推播事件
+    socket.on("cart:update", (state) => { renderCart(state); if (!state.scale_pending) hideScale(); });
+    socket.on("scale:status", (st) => renderScale(st));
+    socket.on("scale:finalized", () => { stopScalePoller(); hideScale(); syncCart(); });
+    socket.on("scale:error", () => { stopScalePoller(); hideScale(); syncCart(); alert("秤重錯誤，請通知店員"); });
+    socket.on("receipt:ready", (data) => { if (data && data.url) showReceipt(data.url); });
+
+    // 保險：每 2 秒拉一次購物車
+    setInterval(() => { fetch("/api/cart").then(r=>r.json()).then(renderCart).catch(()=>{}); }, 2000);
+
+    function syncAll(){ syncCart(); api("/api/scale/status").then(renderScale).catch(()=>{}); }
+    function syncCart(){ api("/api/cart").then(renderCart).catch(()=>{}); }
+
+    function renderCart(state){
+      const items = state.items || [];
+      const ul = document.getElementById("cart-items");
+      const tip = document.getElementById("empty-tip");
+      ul.innerHTML = "";
+      if(items.length === 0){
+        tip.style.display = "block";
+      }else{
+        tip.style.display = "none";
+        items.forEach(it=>{
+          const li = document.createElement("li");
+          li.className = "row";
+          li.innerHTML = `<div class="name">${escapeHtml(it.name)} × ${it.qty}</div>
+                          <div class="subtotal">$${Number(it.subtotal).toFixed(0)}</div>`;
+          ul.appendChild(li);
+        });
+      }
+      setText("subtotal", `$${Number(state.subtotal||0).toFixed(0)}`);
+      setText("discount", `$${Number(state.discount||0).toFixed(0)}`);
+      setText("total",    `$${Number(state.total||0).toFixed(0)}`);
+
+      const locking = !!state.scale_pending; // 正在秤重就鎖
+      document.getElementById("checkout-btn").disabled = locking;
+      document.getElementById("clear-btn").disabled = locking;
+    }
+
+    // ====== 結帳（強化版：loading + 備援輪詢） ======
+    let receiptTimer = null;
+    let checkoutPoller = null;
+
+    document.getElementById("checkout-btn").addEventListener("click", async ()=>{
+      // 若秤重畫面打開就擋住
+      if (document.getElementById("scale-overlay").style.display === "flex"){
+        alert("正在秤重，請先完成或取消。");
+        return;
+      }
+      const btn = document.getElementById("checkout-btn");
+      const old = btn.textContent;
+      btn.textContent = "處理中…";
+      btn.disabled = true;
+
+      try{
+        const r = await fetch("/api/checkout", {method:"POST"});
+        if (r.status === 409){
+          alert("正在秤重，請先完成或取消。");
+        }else if (!r.ok){
+          alert("結帳失敗，請稍後再試");
+        }else{
+          // 備援：5 秒內每 1 秒拉購物車一次，確保畫面更新
+          if (checkoutPoller) clearInterval(checkoutPoller);
+          let tries = 0;
+          checkoutPoller = setInterval(async ()=>{
+            tries++;
+            try{ await syncCart(); }catch{}
+            if (tries >= 5){ clearInterval(checkoutPoller); checkoutPoller=null; }
+          }, 1000);
+        }
+      }catch(e){
+        alert("結帳連線失敗，請檢查網路或重新整理。");
+      }finally{
+        btn.textContent = old;
+        // 立刻刷新一次
+        syncCart();
+      }
+    });
+
+    document.getElementById("clear-btn").addEventListener("click", async ()=>{
+      const r = await fetch("/api/cart/clear", {method:"POST"});
+      if (r.status===409){ alert("正在秤重，請先完成或取消。"); return; }
+      if (!r.ok){ alert("清空失敗"); return; }
+      syncCart();
+    });
+
+    // ====== QRCode（含倒數 & 手動關閉） ======
+    function showReceipt(url){
+      const overlay = document.getElementById("receipt-overlay");
+      overlay.style.display = "flex";
+      const box = document.getElementById("qrcode");
+      box.innerHTML = "";
+      new QRCode(box, { text: url, width: 220, height: 220 });
+      if (receiptTimer) clearTimeout(receiptTimer);
+      receiptTimer = setTimeout(()=>{ closeReceipt(); }, 60000);
+    }
+    function closeReceipt(){
+      const overlay = document.getElementById("receipt-overlay");
+      overlay.style.display = "none";
+      if (receiptTimer){ clearTimeout(receiptTimer); receiptTimer = null; }
+      syncCart();
+    }
+    window.closeReceipt = closeReceipt;
+    window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeReceipt(); });
+
+    // ====== 秤重（備援輪詢） ======
+    let poller = null;
+    function startScalePoller(){
+      if (poller) return;
+      poller = setInterval(() => {
+        fetch("/api/scale/status").then(r=>r.json()).then(renderScale).catch(()=>{});
+        fetch("/api/cart").then(r=>r.json()).then(renderCart).catch(()=>{});
+      }, 1000);
+    }
+    function stopScalePoller(){ if(poller){ clearInterval(poller); poller=null; } }
+
+    function renderScale(st){
+      const overlay = document.getElementById("scale-overlay");
+      if(!overlay) return;
+      if(!st || !st.pending){
+        hideScale(); stopScalePoller();
+        document.getElementById("checkout-btn").disabled = false;
+        document.getElementById("clear-btn").disabled = false;
+        return;
+      }
+      overlay.style.display = "flex";
+      startScalePoller();
+
+      setText("scale-name",   st.base_name || "—");
+      setText("scale-weight", st.weight!=null ? `${Number(st.weight).toFixed(2)} g` : "— g");
+      setText("scale-split",  st.split_g!=null ? Number(st.split_g).toFixed(0) : "—");
+      setText("scale-suggest", st.suggest==="large" ? "大包" : (st.suggest==="small" ? "小包" : "—"));
+      setText("scale-will-add", st.will_add || "—");
+      setText("scale-state", (st.pending ? "偵測中" : "完成"));
+
+      document.getElementById("checkout-btn").disabled = true;
+      document.getElementById("clear-btn").disabled = true;
+    }
+    function hideScale(){ const o=document.getElementById("scale-overlay"); if(o) o.style.display="none"; }
+    function cancelScale(){ fetch("/api/scale/cancel", {method:"POST"}).then(()=>{ stopScalePoller(); hideScale(); syncCart(); }); }
+    window.cancelScale = cancelScale;
+
+    // ====== 小工具 ======
+    function setText(id, v){ const el=document.getElementById(id); if(el) el.textContent=v; }
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# YOLO training outputs
+runs/
+artifacts/
+
+# receipts (runtime output)
+receipts/
+
+exports/
