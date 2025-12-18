@@ -1,0 +1,8 @@
+opencv-python
+numpy
+ultralytics
+flask
+flask-socketio
+python-socketio
+pyserial
+reportlab
