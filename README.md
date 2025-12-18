@@ -28,3 +28,8 @@ python src/pos.py
 ## Model
 
 The trained model is already included in weights/, so the demo can run without re-training
+
+## Demo Video
+
+- Demo video (Google Drive): https://drive.google.com/file/d/1Uthb3iRBrpX3dZeUynRbR8tboi5sFeE1/view?usp=sharing  
+  (Video file hosted on Google Drive due to GitHub size limitations)
